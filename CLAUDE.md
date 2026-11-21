@@ -24,6 +24,7 @@ npm run test:e2e -- -g "upgrade"   # filter; also: -- specs/04-subscriptions.spe
 npm run test:all                   # API tests then UI tests
 TEST_DATABASE_URL=<throwaway db> npm run perf -- --tps=20 --vus=50 --total-users=600 --p95-ms=500   # k6 gate
 ```
+Ports: dev API 4000, Vite 5173, UI-test server 3100, perf server 3902, local Postgres 5433 (keeps suites from colliding with a running dev server). On this Windows/git-bash setup, long heredocs containing apostrophes or markdown fail to parse; create files with the editor/Write tool instead.
 `npm audit` must be run inside `server/` and `client/` directly (nested `npm audit` from a root `npm run` script fails with `EALLOWSCRIPTS` on npm 12).
 
 ## Database rules (important)
@@ -57,7 +58,11 @@ TEST_DATABASE_URL=<throwaway db> npm run perf -- --tps=20 --vus=50 --total-users
 - `server/logger.js` loads pino via `createRequire` on purpose: a plain ESM `import pino` bypasses the OTel require hook, so logs get no `trace_id` and are not shipped to Loki. Log ids and outcomes only, never emails/names/card data.
 - Business metrics live in `server/metrics.js` (`upskill.auth.events`, `upskill.course.purchases`, `upskill.revenue`, `upskill.payment.amount`, `upskill.subscription.events`, `upskill.lessons.events`, `upskill.access.denied`, `upskill.rate_limited`) and are recorded in `app.js`; keep attributes low-cardinality. Revenue is recorded where the payment row is written, inside the transaction.
 - `@opentelemetry/sdk-logs` 3.x takes an options object: `new BatchLogRecordProcessor({ exporter })`. Don't add `@opentelemetry/api-logs` as a direct dependency (a version split with the SDK broke log export).
+- `server/.env` now contains the real `OTEL_*` settings, so local `dev:server` / `npm start` runs also export (tagged `deployment.environment.name=development`); add `OTEL_SDK_DISABLED=true` to a run to keep local traffic out of Grafana. Production sets the same four `OTEL_*` vars on the Render service (stack region `prod-ap-south-1`, service name `upskill`).
 - Not done: frontend (Faro), dashboards/alerts as code. Verified locally against a fake OTLP collector (traces, metrics and logs arrive); delivery to the real Grafana stack is verified only once credentials are configured.
 
 ## Deployment
-Render web service `upskill` (Sudip's Workspace, free plan) builds with `npm install --prefix server --omit=dev && npm install --prefix client --include=dev && npm run build`, starts with `npm start`, health check `/api/health`. Pushing to `main` redeploys. `render.yaml` mirrors this for Blueprint use; `DATABASE_URL` is set in the dashboard, never committed.
+Live at https://upskill-nzql.onrender.com. Render web service `upskill` (id `srv-dc0l753m8hqs73ese2ng`, Sudip's Workspace, free plan, Oregon, branch `main`) builds with `npm install --prefix server --omit=dev && npm install --prefix client --include=dev && npm run build`, starts with `npm start`, health check `/api/health`. Env vars on the service: `NODE_VERSION`, `NODE_ENV`, `DATABASE_URL` (Neon, same DB as local dev), `JWT_SECRET`, `ENABLE_DEMO_TOOLS=false`, and the four `OTEL_*` vars. `render.yaml` mirrors this for Blueprint use.
+- **A push to `main` did not reliably trigger a deploy** here (the service was created through the API, not from the Blueprint). After pushing, trigger one with `POST https://api.render.com/v1/services/<id>/deploys` (needs a Render API key, which is not stored anywhere in the repo) or "Manual Deploy" in the dashboard, then poll `GET /v1/services/<id>/deploys?limit=1` until `live`. Changing an env var via `PUT /v1/services/<id>/env-vars/<KEY>` does not by itself change code.
+- Free tier sleeps after ~15 min idle, so the first request can take 30-60 s.
+- `DATABASE_URL` is shared by local dev and production: test accounts created locally exist in prod.
