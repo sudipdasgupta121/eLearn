@@ -37,6 +37,11 @@ Set `ENABLE_DEMO_TOOLS=true` to show **Account → Fast-forward to end of billin
 
 CI (`.github/workflows/ci.yml`) runs unit + integration tests (the headed UI suite needs a display, so it is run on demand before merging), the client build and the dependency audit on every push/PR.
 
+## Live deployment
+- URL: https://upskill-nzql.onrender.com (Render web service `upskill`, Sudip's Workspace, free plan, Oregon, auto-deploys from `main`)
+- Database: Neon Postgres (`DATABASE_URL` set in the Render dashboard)
+- Free-tier note: the service sleeps after ~15 min idle, so the first request can take ~30-60 s to wake it.
+
 ## Deploy to Render
 1. Create a Postgres database (e.g. Neon) and copy its connection string.
 2. Render → **New → Blueprint** → select this repo (`render.yaml`).
