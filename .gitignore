@@ -16,3 +16,8 @@ tests/e2e/playwright-report/
 tests/e2e/reports/
 blob-report/
 !.env.e2e.example
+
+# k6 performance suite
+tests/perf/.env.perf
+tests/perf/results/
+!.env.perf.example

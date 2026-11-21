@@ -1,0 +1,90 @@
+{
+  "finishedAt": "2026-11-21T07:57:42.890Z",
+  "params": {
+    "tps": 20,
+    "vus": 50,
+    "totalUsers": 600,
+    "p95Ms": 500,
+    "maxErrorPct": 1
+  },
+  "derived": {
+    "durationS": 30,
+    "maxVUs": 50
+  },
+  "passed": true,
+  "failedThresholds": [],
+  "totals": {
+    "journeys": 601,
+    "requests": 1761,
+    "droppedIterations": 0,
+    "maxVUsReached": 50
+  },
+  "achievedTps": 20,
+  "requestsPerSec": 58.6,
+  "errorRate": 0,
+  "checkRate": 1,
+  "latencyMs": {
+    "avg": 3.9,
+    "p50": 3.5,
+    "p90": 7.1,
+    "p95": 8.1,
+    "p99": 9.8,
+    "max": 27.1
+  },
+  "journeyMs": {
+    "avg": 12.1,
+    "p95": 17
+  },
+  "endpoints": {
+    "courses_list": {
+      "count": 299,
+      "avg": 3.7,
+      "p95": 4.7
+    },
+    "courses_search": {
+      "count": 299,
+      "avg": 3,
+      "p95": 4.2
+    },
+    "course_detail": {
+      "count": 299,
+      "avg": 3.8,
+      "p95": 5.5
+    },
+    "plans": {
+      "count": 299,
+      "avg": 1.7,
+      "p95": 2.8
+    },
+    "my_courses": {
+      "count": 109,
+      "avg": 5.2,
+      "p95": 6.4
+    },
+    "course_learn": {
+      "count": 109,
+      "avg": 5,
+      "p95": 6.5
+    },
+    "subscription": {
+      "count": 109,
+      "avg": 2.5,
+      "p95": 3.5
+    },
+    "lesson_complete": {
+      "count": 125,
+      "avg": 8.2,
+      "p95": 9.9
+    },
+    "lesson_undo": {
+      "count": 42,
+      "avg": 7.5,
+      "p95": 10.3
+    },
+    "course_purchase": {
+      "count": 68,
+      "avg": 7.3,
+      "p95": 9.7
+    }
+  }
+}

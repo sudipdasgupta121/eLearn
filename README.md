@@ -32,6 +32,7 @@ Set `ENABLE_DEMO_TOOLS=true` to show **Account → Fast-forward to end of billin
 | `npm test` | Both of the above (55 tests). Never touches `DATABASE_URL` |
 | `npm run test:e2e` | **Headed Playwright UI suite** (34 journeys) against a dedicated test DB; generates + opens an HTML report on every run and archives it under `tests/e2e/reports/`. See [tests/e2e/README.md](tests/e2e/README.md) |
 | `npm run test:all` | API tests, then UI tests |
+| `TEST_DATABASE_URL=… npm run perf -- --tps=20 --vus=50 --total-users=600 --p95-ms=500` | **k6 performance/regression gate** against a throwaway DB (you must pass the DB and all four parameters every run). See [tests/perf/README.md](tests/perf/README.md) |
 | `npm audit --omit=dev` | Run inside `server/` and `client/` (CI does this on every push) |
 
 CI (`.github/workflows/ci.yml`) runs unit + integration tests (the headed UI suite needs a display, so it is run on demand before merging), the client build and the dependency audit on every push/PR.

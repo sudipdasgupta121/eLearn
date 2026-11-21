@@ -133,7 +133,7 @@ export function createApp(opts = {}) {
   const api = express.Router();
   app.use('/api', api);
   api.use((_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
-  api.use(rateLimit({ windowMs: 60_000, limit: opts.generalLimit ?? 300, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many requests, slow down' } }));
+  api.use(rateLimit({ windowMs: 60_000, limit: opts.generalLimit ?? (Number(process.env.API_RATE_LIMIT_MAX) || 300), standardHeaders: true, legacyHeaders: false, message: { error: 'Too many requests, slow down' } }));
   const authLimiter = rateLimit({ windowMs: 15 * 60_000, limit: opts.authLimit ?? (Number(process.env.AUTH_RATE_LIMIT_MAX) || 10), standardHeaders: true, legacyHeaders: false, message: { error: 'Too many attempts. Try again in 15 minutes.' } });
 
   // CSRF defence: state-changing requests must carry a custom header. Browsers cannot attach it
