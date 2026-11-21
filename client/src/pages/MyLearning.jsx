@@ -25,7 +25,7 @@ export default function MyLearning() {
         <div className="card stat"><b>{stats.completed}</b><span>Courses completed</span></div>
         <div className="card stat"><b>{sub?.status === 'active' ? sub.plan_name : 'None'}</b><span>{sub?.status === 'active' ? 'Current plan' : 'Subscription'}</span></div>
       </div>
-      {lockedCount > 0 && <div className="alert alert-warn">{lockedCount} course(s) are locked because your plan changed or expired. <Link to="/account">Manage subscription</Link></div>}
+      {lockedCount > 0 && <div className="alert alert-warn">{lockedCount} {lockedCount === 1 ? 'course is' : 'courses are'} locked because your plan changed or expired. <Link to="/account">Manage subscription</Link></div>}
       <h2>My courses</h2>
       {courses.length === 0 ? (
         <div className="card empty">

@@ -8,3 +8,11 @@ server/.pgdata/
 *.png
 !docs/*.png
 .DS_Store
+
+# Playwright e2e
+tests/e2e/.env.e2e
+tests/e2e/test-results/
+tests/e2e/playwright-report/
+tests/e2e/reports/
+blob-report/
+!.env.e2e.example

@@ -26,16 +26,16 @@ export default function Courses() {
     <div className="container page">
       <h1>All courses</h1>
       <form className="filters" onSubmit={(e) => { e.preventDefault(); update('search', text) }}>
-        <input placeholder="Search courses, topics, instructors" value={text} onChange={(e) => setText(e.target.value)} />
-        <select value={f.category} onChange={(e) => update('category', e.target.value)}>
+        <input aria-label="Search courses" placeholder="Search courses, topics, instructors" value={text} onChange={(e) => setText(e.target.value)} />
+        <select aria-label="Category" value={f.category} onChange={(e) => update('category', e.target.value)}>
           <option value="">All categories</option>
           {data.categories.map((c) => <option key={c.category}>{c.category}</option>)}
         </select>
-        <select value={f.level} onChange={(e) => update('level', e.target.value)}>
+        <select aria-label="Level" value={f.level} onChange={(e) => update('level', e.target.value)}>
           <option value="">All levels</option>
           <option>Beginner</option><option>Intermediate</option><option>Advanced</option>
         </select>
-        <select value={f.sort} onChange={(e) => update('sort', e.target.value)}>
+        <select aria-label="Sort by" value={f.sort} onChange={(e) => update('sort', e.target.value)}>
           <option value="">Most popular</option>
           <option value="rating">Highest rated</option>
           <option value="price_asc">Price: low to high</option>

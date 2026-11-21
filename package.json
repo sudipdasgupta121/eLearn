@@ -16,6 +16,13 @@
     "test": "npm test --prefix server",
     "test:unit": "npm run test:unit --prefix server",
     "test:integration": "npm run test:integration --prefix server",
-    "test:ui": "npm test --prefix e2e"
+    "test:e2e": "node tests/e2e/run.js",
+    "test:e2e:debug": "playwright test --config=tests/e2e/playwright.config.js --debug",
+    "test:e2e:report": "playwright show-report tests/e2e/playwright-report",
+    "test:all": "npm test && npm run test:e2e"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.1",
+    "dotenv": "^18.0.10"
   }
 }

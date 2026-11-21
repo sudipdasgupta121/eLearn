@@ -134,7 +134,7 @@ export function createApp(opts = {}) {
   app.use('/api', api);
   api.use((_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
   api.use(rateLimit({ windowMs: 60_000, limit: opts.generalLimit ?? 300, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many requests, slow down' } }));
-  const authLimiter = rateLimit({ windowMs: 15 * 60_000, limit: opts.authLimit ?? 10, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many attempts. Try again in 15 minutes.' } });
+  const authLimiter = rateLimit({ windowMs: 15 * 60_000, limit: opts.authLimit ?? (Number(process.env.AUTH_RATE_LIMIT_MAX) || 10), standardHeaders: true, legacyHeaders: false, message: { error: 'Too many attempts. Try again in 15 minutes.' } });
 
   // CSRF defence: state-changing requests must carry a custom header. Browsers cannot attach it
   // cross-site without a CORS preflight, which we do not allow. Combined with SameSite=Lax cookies.
