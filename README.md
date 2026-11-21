@@ -57,3 +57,4 @@ CI (`.github/workflows/ci.yml`) runs unit + integration tests (the headed UI sui
 | `TRUST_PROXY` | no | proxies in front of the app (default 1 in production) |
 | `CORS_ORIGINS` | no | only if the frontend is on another origin |
 | `PG_SSL` | no | `no-verify` / `disable` escape hatches |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_EXPORTER_OTLP_PROTOCOL`, `OTEL_SERVICE_NAME` | no | Grafana Cloud telemetry (traces, metrics, logs). Unset endpoint = telemetry disabled |

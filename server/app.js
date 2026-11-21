@@ -7,6 +7,8 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { one, many, query, tx } from './db.js';
 import { HttpError, bad } from './lib/errors.js';
+import { logger } from './logger.js';
+import { accessDenied, authEvents, coursePurchases, lessonEvents, paymentAmount, rateLimited, revenue, subscriptionEvents } from './metrics.js';
 import { isUpgrade, periodMs, priceOf, prorate } from './lib/billing.js';
 import { escapeLike, validateCard, validateEmail, validateName, validatePassword } from './lib/validation.js';
 
@@ -39,8 +41,12 @@ function charge(card) {
   if (num === '4000000000000002') throw new HttpError(402, 'Payment declined by the issuer (test card 4000 0000 0000 0002)');
   return num.slice(-4);
 }
-const recordPayment = (c, userId, kind, description, amount) =>
-  c.query('INSERT INTO payments (user_id,kind,description,amount) VALUES ($1,$2,$3,$4)', [userId, kind, description, amount]);
+const recordPayment = (c, userId, kind, description, amount) => {
+  revenue.add(amount, { kind });
+  paymentAmount.record(amount, { kind });
+  logger.info({ userId, kind, amount }, 'payment recorded');
+  return c.query('INSERT INTO payments (user_id,kind,description,amount) VALUES ($1,$2,$3,$4)', [userId, kind, description, amount]);
+};
 
 // Serializes all money/subscription mutations for one user (prevents double-click double-charges).
 const lockUser = (c, userId) => c.query('SELECT pg_advisory_xact_lock($1)', [userId]);
@@ -64,6 +70,8 @@ async function syncSubscription(c, userId) {
     changed = true;
     if (s.cancel_at_period_end) {
       s.status = 'expired';
+      subscriptionEvents.add(1, { action: 'expired' });
+      logger.info({ userId }, 'subscription expired');
       s.cancel_at_period_end = false;
       s.pending_plan_id = null; s.pending_cycle = null;
       break;
@@ -73,6 +81,7 @@ async function syncSubscription(c, userId) {
       s.pending_plan_id = null; s.pending_cycle = null;
     }
     const plan = await getPlan(c, s.plan_id);
+    subscriptionEvents.add(1, { action: 'auto_renew', plan: plan.name });
     const start = new Date(s.period_end);
     s.period_start = start;
     s.period_end = new Date(start.getTime() + periodMs(s.cycle));
@@ -133,8 +142,10 @@ export function createApp(opts = {}) {
   const api = express.Router();
   app.use('/api', api);
   api.use((_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
-  api.use(rateLimit({ windowMs: 60_000, limit: opts.generalLimit ?? (Number(process.env.API_RATE_LIMIT_MAX) || 300), standardHeaders: true, legacyHeaders: false, message: { error: 'Too many requests, slow down' } }));
-  const authLimiter = rateLimit({ windowMs: 15 * 60_000, limit: opts.authLimit ?? (Number(process.env.AUTH_RATE_LIMIT_MAX) || 10), standardHeaders: true, legacyHeaders: false, message: { error: 'Too many attempts. Try again in 15 minutes.' } });
+  api.use(rateLimit({ windowMs: 60_000, limit: opts.generalLimit ?? (Number(process.env.API_RATE_LIMIT_MAX) || 300), standardHeaders: true, legacyHeaders: false, message: { error: 'Too many requests, slow down' },
+    handler: (_req, res, _next, o) => { rateLimited.add(1, { limiter: 'api' }); res.status(429).json(o.message); } }));
+  const authLimiter = rateLimit({ windowMs: 15 * 60_000, limit: opts.authLimit ?? (Number(process.env.AUTH_RATE_LIMIT_MAX) || 10), standardHeaders: true, legacyHeaders: false, message: { error: 'Too many attempts. Try again in 15 minutes.' },
+    handler: (_req, res, _next, o) => { rateLimited.add(1, { limiter: 'auth' }); logger.warn('auth rate limit hit'); res.status(429).json(o.message); } });
 
   // CSRF defence: state-changing requests must carry a custom header. Browsers cannot attach it
   // cross-site without a CORS preflight, which we do not allow. Combined with SameSite=Lax cookies.
@@ -173,9 +184,11 @@ export function createApp(opts = {}) {
     try {
       const u = await one('INSERT INTO users (name,email,password_hash) VALUES ($1,$2,$3) RETURNING *', [name, email, hash]);
       setSession(res, u);
+      authEvents.add(1, { action: 'register', outcome: 'success' });
+      logger.info({ userId: u.id }, 'user registered');
       return { user: publicUser(u) };
     } catch (e) {
-      if (e.code === '23505') throw new HttpError(409, 'An account with this email already exists');
+      if (e.code === '23505') { authEvents.add(1, { action: 'register', outcome: 'conflict' }); throw new HttpError(409, 'An account with this email already exists'); }
       throw e;
     }
   }));
@@ -185,7 +198,8 @@ export function createApp(opts = {}) {
     const password = typeof req.body?.password === 'string' ? req.body.password.slice(0, 200) : '';
     const u = await one('SELECT * FROM users WHERE email=$1', [email]);
     const ok = await bcrypt.compare(password, u ? u.password_hash : DUMMY_HASH);
-    if (!u || !ok) throw new HttpError(401, 'Invalid email or password');
+    if (!u || !ok) { authEvents.add(1, { action: 'login', outcome: 'failure' }); throw new HttpError(401, 'Invalid email or password'); }
+    authEvents.add(1, { action: 'login', outcome: 'success' });
     setSession(res, u);
     return { user: publicUser(u) };
   }));
@@ -244,6 +258,7 @@ export function createApp(opts = {}) {
   // ----- purchase / enroll -----
   api.post('/courses/:id/purchase', requireAuth, wrap(async (req) => {
     const course = await loadCourse(req.params.id);
+    const outcomeOf = (e) => ({ 402: 'declined', 400: 'invalid_card', 409: 'already_owned' }[e.status] || 'error');
     return tx(async (c) => {
       await lockUser(c, req.userId);
       const { rows } = await c.query('SELECT source FROM enrollments WHERE user_id=$1 AND course_id=$2', [req.userId, course.id]);
@@ -253,8 +268,10 @@ export function createApp(opts = {}) {
       await c.query(
         `INSERT INTO enrollments (user_id,course_id,source) VALUES ($1,$2,'purchase')
          ON CONFLICT (user_id,course_id) DO UPDATE SET source='purchase'`, [req.userId, course.id]);
+      coursePurchases.add(1, { outcome: 'success' });
+      logger.info({ userId: req.userId, courseId: course.id, amount: course.price }, 'course purchased');
       return { ok: true, courseId: course.id };
-    });
+    }).catch((e) => { coursePurchases.add(1, { outcome: outcomeOf(e) }); throw e; });
   }));
 
   api.post('/courses/:id/enroll', requireAuth, wrap(async (req) => {
@@ -303,6 +320,7 @@ export function createApp(opts = {}) {
     if (!lesson) throw new HttpError(404, 'Lesson not found');
     const course = await one('SELECT * FROM courses WHERE id=$1', [lesson.course_id]);
     if (!(await courseAccess(req.userId, course)).access) throw new HttpError(403, 'No access to this course');
+    lessonEvents.add(1, { action: done ? 'completed' : 'undone' });
     if (done) await query('INSERT INTO progress (user_id,lesson_id) VALUES ($1,$2) ON CONFLICT DO NOTHING', [req.userId, lesson.id]);
     else await query('DELETE FROM progress WHERE user_id=$1 AND lesson_id=$2', [req.userId, lesson.id]);
     return one(`SELECT COUNT(*)::int AS completed, (SELECT COUNT(*)::int FROM lessons WHERE course_id=$2) AS total
@@ -329,6 +347,7 @@ export function createApp(opts = {}) {
            cancel_at_period_end=false,pending_plan_id=NULL,pending_cycle=NULL,card_last4=$6`,
         [req.userId, plan.id, cycle, now, new Date(now.getTime() + periodMs(cycle)), last4]);
       await recordPayment(c, req.userId, 'subscription_new', `${plan.name} plan (${cycle}) •••• ${last4}`, priceOf(plan, cycle));
+      subscriptionEvents.add(1, { action: 'subscribe', plan: plan.name, cycle });
     });
     return { subscription: await subscriptionView(req.userId) };
   }));
@@ -349,10 +368,12 @@ export function createApp(opts = {}) {
         await c.query(
           `UPDATE subscriptions SET plan_id=$2,cycle=$3,period_start=$4,period_end=$5,cancel_at_period_end=false,pending_plan_id=NULL,pending_cycle=NULL WHERE user_id=$1`,
           [req.userId, newPlan.id, cycle, now, new Date(now.getTime() + periodMs(cycle))]);
+        subscriptionEvents.add(1, { action: 'upgrade', plan: newPlan.name, cycle });
         return { type: 'upgrade', charged: amount, credit };
       }
       if (s.cancel_at_period_end) throw new HttpError(409, 'Your subscription is set to cancel. Resume it before scheduling a downgrade.');
       await c.query('UPDATE subscriptions SET pending_plan_id=$2,pending_cycle=$3 WHERE user_id=$1', [req.userId, newPlan.id, cycle]);
+      subscriptionEvents.add(1, { action: 'downgrade_scheduled', plan: newPlan.name, cycle });
       return { type: 'downgrade', effectiveAt: s.period_end };
     });
     return { ...result, subscription: await subscriptionView(req.userId) };
@@ -363,6 +384,7 @@ export function createApp(opts = {}) {
       const s = await syncSubscription(c, req.userId);
       if (!s) throw new HttpError(404, 'No subscription found');
       await fn(c, s, req);
+      subscriptionEvents.add(1, { action: path.replace('-', '_') });
     });
     return { subscription: await subscriptionView(req.userId) };
   }));
@@ -413,7 +435,8 @@ export function createApp(opts = {}) {
     let status = err.status, message = err.message;
     if (err.type === 'entity.parse.failed') { status = 400; message = 'Malformed JSON'; }
     else if (err.type === 'entity.too.large') { status = 413; message = 'Request too large'; }
-    else if (!status) { console.error('Unhandled error:', err.stack || err); status = 500; message = 'Internal server error'; }
+    else if (!status) { logger.error({ err }, 'unhandled error'); status = 500; message = 'Internal server error'; }
+    if (status === 401 || status === 403) accessDenied.add(1, { status: String(status) });
     res.status(status).json({ error: message });
   });
   return app;

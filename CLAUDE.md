@@ -51,5 +51,13 @@ TEST_DATABASE_URL=<throwaway db> npm run perf -- --tps=20 --vus=50 --total-users
 - `tests/perf/`: k6 arrival-rate suite, orchestrated by Node (`run-perf.js`); app-specific files are `perf.config.js`, `prepare-test-db.js`, `k6/journeys.js`. The runner mints session cookies for seeded pool users instead of logging in (bcrypt cost 12 would dominate setup), and raises the per-IP rate limits on the perf server only. Baselines are committed in `tests/perf/baselines/` and keyed by parameter set.
 - CI (`.github/workflows/ci.yml`) runs unit + integration, the client build and `npm audit`; the headed UI suite is run on demand.
 
+## Observability (OpenTelemetry -> Grafana Cloud)
+- `server/telemetry.js` must be loaded with `node --import ./telemetry.js` (already in the `start`/`dev` scripts, the root `start`, and the perf config); importing it from app code is too late for auto-instrumentation. It is a **no-op unless `OTEL_EXPORTER_OTLP_ENDPOINT` is set** and reads `server/.env` itself.
+- Test runners must set `OTEL_SDK_DISABLED=true` (Playwright and perf configs already do) so test traffic never reaches Grafana. API tests call `createApp()` directly and never load telemetry.
+- `server/logger.js` loads pino via `createRequire` on purpose: a plain ESM `import pino` bypasses the OTel require hook, so logs get no `trace_id` and are not shipped to Loki. Log ids and outcomes only, never emails/names/card data.
+- Business metrics live in `server/metrics.js` (`upskill.auth.events`, `upskill.course.purchases`, `upskill.revenue`, `upskill.payment.amount`, `upskill.subscription.events`, `upskill.lessons.events`, `upskill.access.denied`, `upskill.rate_limited`) and are recorded in `app.js`; keep attributes low-cardinality. Revenue is recorded where the payment row is written, inside the transaction.
+- `@opentelemetry/sdk-logs` 3.x takes an options object: `new BatchLogRecordProcessor({ exporter })`. Don't add `@opentelemetry/api-logs` as a direct dependency (a version split with the SDK broke log export).
+- Not done: frontend (Faro), dashboards/alerts as code. Verified locally against a fake OTLP collector (traces, metrics and logs arrive); delivery to the real Grafana stack is verified only once credentials are configured.
+
 ## Deployment
 Render web service `upskill` (Sudip's Workspace, free plan) builds with `npm install --prefix server --omit=dev && npm install --prefix client --include=dev && npm run build`, starts with `npm start`, health check `/api/health`. Pushing to `main` redeploys. `render.yaml` mirrors this for Blueprint use; `DATABASE_URL` is set in the dashboard, never committed.

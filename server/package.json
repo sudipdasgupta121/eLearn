@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "start": "node index.js",
-    "dev": "node --watch index.js",
+    "start": "node --import ./telemetry.js index.js",
+    "dev": "node --watch --import ./telemetry.js index.js",
     "db:local": "node scripts/local-pg.js",
     "test": "npm run test:unit && npm run test:integration",
     "test:unit": "node --test \"test/unit/**/*.test.js\"",
@@ -12,6 +12,15 @@
     "audit": "npm audit --omit=dev"
   },
   "dependencies": {
+    "@opentelemetry/api": "^1.10.0",
+    "@opentelemetry/auto-instrumentations-node": "^0.83.1",
+    "@opentelemetry/exporter-logs-otlp-proto": "^0.301.2",
+    "@opentelemetry/exporter-metrics-otlp-proto": "^0.301.2",
+    "@opentelemetry/exporter-trace-otlp-proto": "^0.301.2",
+    "@opentelemetry/resources": "^3.1.1",
+    "@opentelemetry/sdk-logs": "^3.1.1",
+    "@opentelemetry/sdk-metrics": "^3.1.1",
+    "@opentelemetry/sdk-node": "^0.301.2",
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
@@ -20,7 +29,8 @@
     "express-rate-limit": "^8.7.5",
     "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.2",
-    "pg": "^8.23.1"
+    "pg": "^8.23.1",
+    "pino": "^10.4.0"
   },
   "devDependencies": {
     "embedded-postgres": "^18.7.0-beta.19"

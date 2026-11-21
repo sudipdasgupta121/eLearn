@@ -34,6 +34,7 @@ export async function startApp(appOpts = {}) {
   process.env.DATABASE_URL = dbh.url;
   process.env.JWT_SECRET = 'test-secret-test-secret-test-secret-123456';
   delete process.env.NODE_ENV;
+  process.env.LOG_LEVEL = 'silent';
   const { setupSchema, pool, query } = await import('../../db.js');
   const { seed } = await import('../../seed.js');
   const { createApp } = await import('../../app.js');

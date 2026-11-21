@@ -5,6 +5,7 @@ import express from 'express';
 import { pool, setupSchema } from './db.js';
 import { seed } from './seed.js';
 import { createApp } from './app.js';
+import { logger } from './logger.js';
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.join(dir, '..', 'client', 'dist');
@@ -24,15 +25,15 @@ if (fs.existsSync(dist)) {
 }
 
 const port = process.env.PORT || 4000;
-const server = app.listen(port, () => console.log(`upSkill running on port ${port} (${process.env.NODE_ENV || 'development'})`));
+const server = app.listen(port, () => logger.info({ port, env: process.env.NODE_ENV || 'development', otel: !!process.env.OTEL_EXPORTER_OTLP_ENDPOINT && process.env.OTEL_SDK_DISABLED !== 'true' }, 'upSkill started'));
 server.requestTimeout = 30_000;
 server.headersTimeout = 35_000;
 
 async function shutdown(signal) {
-  console.log(`${signal} received, shutting down`);
+  logger.info({ signal }, 'shutting down');
   server.close(async () => { await pool.end().catch(() => {}); process.exit(0); });
   setTimeout(() => process.exit(1), 10_000).unref();
 }
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
-process.on('unhandledRejection', (e) => console.error('Unhandled rejection:', e));
+process.on('unhandledRejection', (err) => logger.error({ err }, 'unhandled rejection'));

@@ -12,7 +12,7 @@ export default {
   // stripped from the app's environment during the run).
   realDbEnvVars: ['DATABASE_URL'],
   build: 'npm run build',
-  start: 'node server/index.js',
+  start: 'node --import ./server/telemetry.js server/index.js',
   readyPath: '/api/health',
   defaultPort: 3902, // isolated from the dev server (4000) and the UI-test server (3100)
   // Env handed to the app process. DATABASE_URL here is ALWAYS the test database.
@@ -20,6 +20,7 @@ export default {
     DATABASE_URL: testUrl,
     PORT: String(port),
     NODE_ENV: 'production', // measure the production build/config
+    OTEL_SDK_DISABLED: 'true', // never ship load-test traffic to Grafana (set false to measure telemetry overhead)
     JWT_SECRET: secretOf(fileEnv),
     // Test-server only: the per-IP limiters would otherwise throttle a single-IP load generator.
     // (Rate limiting itself is covered by the API security tests, not measured here.)

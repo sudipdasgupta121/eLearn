@@ -9,7 +9,7 @@
   "scripts": {
     "install:all": "npm install --prefix server && npm install --prefix client",
     "build": "npm run build --prefix client",
-    "start": "node server/index.js",
+    "start": "node --import ./server/telemetry.js server/index.js",
     "dev:db": "npm run db:local --prefix server",
     "dev:server": "npm run dev --prefix server",
     "dev:client": "npm run dev --prefix client",
