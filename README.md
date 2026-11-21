@@ -58,3 +58,4 @@ CI (`.github/workflows/ci.yml`) runs unit + integration tests (the headed UI sui
 | `CORS_ORIGINS` | no | only if the frontend is on another origin |
 | `PG_SSL` | no | `no-verify` / `disable` escape hatches |
 | `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_EXPORTER_OTLP_PROTOCOL`, `OTEL_SERVICE_NAME` | no | Grafana Cloud telemetry (traces, metrics, logs). Unset endpoint = telemetry disabled |
+| `SLACK_WEBHOOK_URL` | no | Slack Incoming Webhook for business/error/deploy notifications (anonymous: user ids only). Unset = disabled. Also add it as a GitHub Actions secret to get CI status in Slack |

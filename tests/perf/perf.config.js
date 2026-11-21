@@ -20,6 +20,7 @@ export default {
     DATABASE_URL: testUrl,
     PORT: String(port),
     NODE_ENV: 'production', // measure the production build/config
+    SLACK_DISABLED: 'true', // never post load-test traffic to Slack
     OTEL_SDK_DISABLED: 'true', // never ship load-test traffic to Grafana (set false to measure telemetry overhead)
     JWT_SECRET: secretOf(fileEnv),
     // Test-server only: the per-IP limiters would otherwise throttle a single-IP load generator.

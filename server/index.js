@@ -6,6 +6,7 @@ import { pool, setupSchema } from './db.js';
 import { seed } from './seed.js';
 import { createApp } from './app.js';
 import { logger } from './logger.js';
+import { notify } from './slack.js';
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.join(dir, '..', 'client', 'dist');
@@ -25,7 +26,12 @@ if (fs.existsSync(dist)) {
 }
 
 const port = process.env.PORT || 4000;
-const server = app.listen(port, () => logger.info({ port, env: process.env.NODE_ENV || 'development', otel: !!process.env.OTEL_EXPORTER_OTLP_ENDPOINT && process.env.OTEL_SDK_DISABLED !== 'true' }, 'upSkill started'));
+const server = app.listen(port, () => {
+  logger.info({ port, env: process.env.NODE_ENV || 'development', otel: !!process.env.OTEL_EXPORTER_OTLP_ENDPOINT && process.env.OTEL_SDK_DISABLED !== 'true' }, 'upSkill started');
+  if (process.env.NODE_ENV === 'production') {
+    notify('deploy', 'upSkill is live (service started)', { Node: process.version, Telemetry: process.env.OTEL_EXPORTER_OTLP_ENDPOINT && process.env.OTEL_SDK_DISABLED !== 'true' ? 'on' : 'off' });
+  }
+});
 server.requestTimeout = 30_000;
 server.headersTimeout = 35_000;
 
@@ -36,4 +42,7 @@ async function shutdown(signal) {
 }
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
-process.on('unhandledRejection', (err) => logger.error({ err }, 'unhandled rejection'));
+process.on('unhandledRejection', (err) => {
+  logger.error({ err }, 'unhandled rejection');
+  notify('error', 'Unhandled promise rejection', { Error: err?.code || err?.name || 'Error' }, { throttleKey: 'unhandled-rejection', throttleMs: 60_000 });
+});

@@ -50,6 +50,7 @@ export default defineConfig({
       PORT,
       NODE_ENV: 'production', // production parity: secure cookies, CSP, HSTS, strict config
       JWT_SECRET: process.env.E2E_JWT_SECRET || 'e2e-only-secret-e2e-only-secret-e2e-only-1234',
+      SLACK_DISABLED: 'true', // never post test traffic to Slack
       OTEL_SDK_DISABLED: 'true', // never ship test traffic to Grafana (telemetry.js reads server/.env)
       ENABLE_DEMO_TOOLS: 'true', // lets the suite fast-forward billing periods
       AUTH_RATE_LIMIT_MAX: '500', // many sign-ups from one IP in a single run

@@ -30,18 +30,22 @@ export const query = (text, params) => pool.query(text, params);
 export const one = async (text, params) => (await pool.query(text, params)).rows[0];
 export const many = async (text, params) => (await pool.query(text, params)).rows;
 
-/** Run fn(client) inside a transaction. */
+/** Run fn(client) inside a transaction. `client.afterCommit(fn)` registers work to run only after COMMIT succeeds. */
 export async function tx(fn) {
   const client = await pool.connect();
+  const after = [];
+  client.afterCommit = (cb) => after.push(cb);
   try {
     await client.query('BEGIN');
     const r = await fn(client);
     await client.query('COMMIT');
+    for (const cb of after) { try { cb(); } catch { /* side effects must never fail the request */ } }
     return r;
   } catch (e) {
     await client.query('ROLLBACK').catch(() => {});
     throw e;
   } finally {
+    delete client.afterCommit;
     client.release();
   }
 }

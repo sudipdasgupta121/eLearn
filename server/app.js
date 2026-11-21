@@ -8,6 +8,7 @@ import jwt from 'jsonwebtoken';
 import { one, many, query, tx } from './db.js';
 import { HttpError, bad } from './lib/errors.js';
 import { logger } from './logger.js';
+import { notify } from './slack.js';
 import { accessDenied, authEvents, coursePurchases, lessonEvents, paymentAmount, rateLimited, revenue, subscriptionEvents } from './metrics.js';
 import { isUpgrade, periodMs, priceOf, prorate } from './lib/billing.js';
 import { escapeLike, validateCard, validateEmail, validateName, validatePassword } from './lib/validation.js';
@@ -72,6 +73,7 @@ async function syncSubscription(c, userId) {
       s.status = 'expired';
       subscriptionEvents.add(1, { action: 'expired' });
       logger.info({ userId }, 'subscription expired');
+      c.afterCommit?.(() => notify('subscription', 'Subscription expired', { User: `#${userId}` }));
       s.cancel_at_period_end = false;
       s.pending_plan_id = null; s.pending_cycle = null;
       break;
@@ -82,6 +84,7 @@ async function syncSubscription(c, userId) {
     }
     const plan = await getPlan(c, s.plan_id);
     subscriptionEvents.add(1, { action: 'auto_renew', plan: plan.name });
+    c.afterCommit?.(() => notify('subscription', 'Subscription auto-renewed', { User: `#${userId}`, Plan: plan.name, Cycle: s.cycle, Amount: `$${priceOf(plan, s.cycle)}` }));
     const start = new Date(s.period_end);
     s.period_start = start;
     s.period_end = new Date(start.getTime() + periodMs(s.cycle));
@@ -145,7 +148,7 @@ export function createApp(opts = {}) {
   api.use(rateLimit({ windowMs: 60_000, limit: opts.generalLimit ?? (Number(process.env.API_RATE_LIMIT_MAX) || 300), standardHeaders: true, legacyHeaders: false, message: { error: 'Too many requests, slow down' },
     handler: (_req, res, _next, o) => { rateLimited.add(1, { limiter: 'api' }); res.status(429).json(o.message); } }));
   const authLimiter = rateLimit({ windowMs: 15 * 60_000, limit: opts.authLimit ?? (Number(process.env.AUTH_RATE_LIMIT_MAX) || 10), standardHeaders: true, legacyHeaders: false, message: { error: 'Too many attempts. Try again in 15 minutes.' },
-    handler: (_req, res, _next, o) => { rateLimited.add(1, { limiter: 'auth' }); logger.warn('auth rate limit hit'); res.status(429).json(o.message); } });
+    handler: (_req, res, _next, o) => { rateLimited.add(1, { limiter: 'auth' }); logger.warn('auth rate limit hit'); notify('security', 'Login/register rate limit triggered', { Note: 'repeated attempts from one client' }, { throttleKey: 'auth-rate-limit', throttleMs: 600_000 }); res.status(429).json(o.message); } });
 
   // CSRF defence: state-changing requests must carry a custom header. Browsers cannot attach it
   // cross-site without a CORS preflight, which we do not allow. Combined with SameSite=Lax cookies.
@@ -186,6 +189,7 @@ export function createApp(opts = {}) {
       setSession(res, u);
       authEvents.add(1, { action: 'register', outcome: 'success' });
       logger.info({ userId: u.id }, 'user registered');
+      notify('signup', 'New learner signed up', { User: `#${u.id}` });
       return { user: publicUser(u) };
     } catch (e) {
       if (e.code === '23505') { authEvents.add(1, { action: 'register', outcome: 'conflict' }); throw new HttpError(409, 'An account with this email already exists'); }
@@ -270,8 +274,14 @@ export function createApp(opts = {}) {
          ON CONFLICT (user_id,course_id) DO UPDATE SET source='purchase'`, [req.userId, course.id]);
       coursePurchases.add(1, { outcome: 'success' });
       logger.info({ userId: req.userId, courseId: course.id, amount: course.price }, 'course purchased');
+      c.afterCommit(() => notify('purchase', 'Course purchased', { Course: course.title, Amount: `$${course.price}`, User: `#${req.userId}` }));
       return { ok: true, courseId: course.id };
-    }).catch((e) => { coursePurchases.add(1, { outcome: outcomeOf(e) }); throw e; });
+    }).catch((e) => {
+      const outcome = outcomeOf(e);
+      coursePurchases.add(1, { outcome });
+      if (outcome === 'declined') notify('warn', 'Payment declined', { Course: course.title, User: `#${req.userId}` });
+      throw e;
+    });
   }));
 
   api.post('/courses/:id/enroll', requireAuth, wrap(async (req) => {
@@ -348,6 +358,7 @@ export function createApp(opts = {}) {
         [req.userId, plan.id, cycle, now, new Date(now.getTime() + periodMs(cycle)), last4]);
       await recordPayment(c, req.userId, 'subscription_new', `${plan.name} plan (${cycle}) •••• ${last4}`, priceOf(plan, cycle));
       subscriptionEvents.add(1, { action: 'subscribe', plan: plan.name, cycle });
+      c.afterCommit(() => notify('subscription', 'New subscription', { Plan: plan.name, Billing: cycle, Amount: `$${priceOf(plan, cycle)}`, User: `#${req.userId}` }));
     });
     return { subscription: await subscriptionView(req.userId) };
   }));
@@ -369,11 +380,13 @@ export function createApp(opts = {}) {
           `UPDATE subscriptions SET plan_id=$2,cycle=$3,period_start=$4,period_end=$5,cancel_at_period_end=false,pending_plan_id=NULL,pending_cycle=NULL WHERE user_id=$1`,
           [req.userId, newPlan.id, cycle, now, new Date(now.getTime() + periodMs(cycle))]);
         subscriptionEvents.add(1, { action: 'upgrade', plan: newPlan.name, cycle });
+        c.afterCommit(() => notify('subscription', 'Plan upgraded', { Change: `${oldPlan.name} -> ${newPlan.name} (${cycle})`, Charged: `$${amount.toFixed(2)}`, User: `#${req.userId}` }));
         return { type: 'upgrade', charged: amount, credit };
       }
       if (s.cancel_at_period_end) throw new HttpError(409, 'Your subscription is set to cancel. Resume it before scheduling a downgrade.');
       await c.query('UPDATE subscriptions SET pending_plan_id=$2,pending_cycle=$3 WHERE user_id=$1', [req.userId, newPlan.id, cycle]);
       subscriptionEvents.add(1, { action: 'downgrade_scheduled', plan: newPlan.name, cycle });
+      c.afterCommit(() => notify('subscription', 'Downgrade scheduled', { Change: `${oldPlan.name} -> ${newPlan.name} (${cycle})`, User: `#${req.userId}` }));
       return { type: 'downgrade', effectiveAt: s.period_end };
     });
     return { ...result, subscription: await subscriptionView(req.userId) };
@@ -385,6 +398,11 @@ export function createApp(opts = {}) {
       if (!s) throw new HttpError(404, 'No subscription found');
       await fn(c, s, req);
       subscriptionEvents.add(1, { action: path.replace('-', '_') });
+      if (path !== 'demo-expire') {
+        const planName = (await getPlan(c, s.plan_id)).name;
+        const title = { cancel: 'Subscription cancellation scheduled', resume: 'Subscription resumed', 'cancel-change': 'Scheduled plan change withdrawn', renew: 'Subscription renewed' }[path] || `Subscription ${path}`;
+        c.afterCommit(() => notify('subscription', title, { Plan: planName, User: `#${req.userId}` }));
+      }
     });
     return { subscription: await subscriptionView(req.userId) };
   }));
@@ -431,11 +449,13 @@ export function createApp(opts = {}) {
 
   api.use((_req, _res, next) => next(new HttpError(404, 'Not found')));
   // eslint-disable-next-line no-unused-vars
-  app.use((err, _req, res, _next) => {
+  app.use((err, req, res, _next) => {
     let status = err.status, message = err.message;
     if (err.type === 'entity.parse.failed') { status = 400; message = 'Malformed JSON'; }
     else if (err.type === 'entity.too.large') { status = 413; message = 'Request too large'; }
-    else if (!status) { logger.error({ err }, 'unhandled error'); status = 500; message = 'Internal server error'; }
+    else if (!status) { logger.error({ err }, 'unhandled error'); status = 500;
+      const where = `${req.method} ${(req.originalUrl || '').split('?')[0].replace(/\d+/g, ':id')}`;
+      notify('error', 'Unhandled server error', { Route: where, Error: err?.code || err?.name || 'Error' }, { throttleKey: `error:${where}`, throttleMs: 60_000 }); message = 'Internal server error'; }
     if (status === 401 || status === 403) accessDenied.add(1, { status: String(status) });
     res.status(status).json({ error: message });
   });
