@@ -440,7 +440,8 @@ export function createApp(opts = {}) {
   if (demoTools) {
     simple('demo-expire', async (c, s, req) => {
       if (s.status !== 'active') throw new HttpError(409, 'Subscription is not active');
-      await c.query('UPDATE subscriptions SET period_end=now() WHERE user_id=$1', [req.userId]);
+      // Use the app clock (the one syncSubscription compares against), 1s in the past, so DB/app clock skew can't leave the period "not over yet".
+      await c.query('UPDATE subscriptions SET period_end=$2 WHERE user_id=$1', [req.userId, new Date(Date.now() - 1000)]);
     });
   }
 
