@@ -31,7 +31,7 @@ Set `ENABLE_DEMO_TOOLS=true` to show **Account → Fast-forward to end of billin
 | `npm run test:integration` | Full API against a **throwaway** Postgres (embedded; or `TEST_DATABASE_URL`, whose name must contain `test`): auth, access control, purchase, progress, subscription lifecycle, concurrency, and security checks (CSRF, rate limits, injection, IDOR, forged JWTs, headers) |
 | `npm test` | Both of the above (55 tests). Never touches `DATABASE_URL` |
 | `npm run test:ui` | Headless-browser end-to-end flow (`cd e2e && npm install` first; `BASE=http://localhost:4000`). Creates data in the target server's DB — use a local DB |
-| `npm run audit:deps` | `npm audit` for production dependencies |
+| `npm audit --omit=dev` | Run inside `server/` and `client/` (CI does this on every push) |
 
 CI (`.github/workflows/ci.yml`) runs unit + integration tests, the client build and the dependency audit on every push/PR.
 
