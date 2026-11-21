@@ -31,7 +31,9 @@ services:
       - key: OTEL_EXPORTER_OTLP_HEADERS
         sync: false            # Authorization=Basic <base64(instanceId:token)> - secret, set in the dashboard/API
       # Slack notifications (the Incoming Webhook URL is a secret: set it in the dashboard/API)
-      - key: SLACK_WEBHOOK_URL
-        sync: false
+      - key: UPSKILL_SLACK_BOT_TOKEN
+        sync: false            # xoxb- bot token (secret): set in the dashboard/API
+      - key: UPSKILL_SLACK_CHANNEL
+        value: C0CKUACMZ18     # #upskill-enggteam (the bot must be invited to it)
       - key: SLACK_ENV_LABEL
         value: production

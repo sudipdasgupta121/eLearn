@@ -2,12 +2,14 @@ import test, { beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { formatMessage, notify, resetSlackThrottle, setSlackTransport, slackEnabled } from '../../slack.js';
 
-const saved = { url: process.env.SLACK_WEBHOOK_URL, disabled: process.env.SLACK_DISABLED };
-beforeEach(() => { setSlackTransport(null); resetSlackThrottle(); delete process.env.SLACK_WEBHOOK_URL; delete process.env.SLACK_DISABLED; });
+const KEYS = ['SLACK_WEBHOOK_URL', 'SLACK_DISABLED', 'UPSKILL_SLACK_BOT_TOKEN', 'UPSKILL_SLACK_CHANNEL'];
+const saved = Object.fromEntries(KEYS.map((k) => [k, process.env[k]]));
+const realFetch = globalThis.fetch;
+beforeEach(() => { setSlackTransport(null); resetSlackThrottle(); KEYS.forEach((k) => delete process.env[k]); });
 afterEach(() => {
   setSlackTransport(null);
-  if (saved.url === undefined) delete process.env.SLACK_WEBHOOK_URL; else process.env.SLACK_WEBHOOK_URL = saved.url;
-  if (saved.disabled === undefined) delete process.env.SLACK_DISABLED; else process.env.SLACK_DISABLED = saved.disabled;
+  globalThis.fetch = realFetch;
+  KEYS.forEach((k) => { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; });
 });
 
 test('is a silent no-op when no webhook is configured', async () => {
@@ -79,4 +81,65 @@ test('notify returns without waiting on a slow Slack (fire-and-forget callers do
   assert.ok(Date.now() - started < 50);
   release();
   assert.equal(await p, true);
+});
+
+// ---- bot-token mode (chat.postMessage) -------------------------------------------------------
+const BOT = 'xoxb' + '-111111111111-222222222222-fakeFAKEfakeFAKEfake';
+
+test('bot mode posts to chat.postMessage with a Bearer token and the channel', async () => {
+  process.env.UPSKILL_SLACK_BOT_TOKEN = BOT;
+  process.env.UPSKILL_SLACK_CHANNEL = 'C0123456789';
+  const calls = [];
+  globalThis.fetch = async (url, init) => { calls.push({ url, init }); return new Response(JSON.stringify({ ok: true }), { status: 200 }); };
+  assert.equal(slackEnabled(), true);
+  assert.equal(await notify('purchase', 'Course purchased', { Amount: '$49' }), true);
+  const [{ url, init }] = calls;
+  assert.equal(url, 'https://slack.com/api/chat.postMessage');
+  assert.equal(init.method, 'POST');
+  assert.equal(init.headers.Authorization, `Bearer ${BOT}`);
+  const body = JSON.parse(init.body);
+  assert.equal(body.channel, 'C0123456789');
+  assert.match(body.text, /Course purchased/);
+  assert.ok(Array.isArray(body.blocks));
+});
+
+test('bot mode needs both token and channel, and rejects malformed values', () => {
+  process.env.UPSKILL_SLACK_BOT_TOKEN = BOT;
+  assert.equal(slackEnabled(), false); // no channel
+  process.env.UPSKILL_SLACK_CHANNEL = 'C0123456789';
+  assert.equal(slackEnabled(), true);
+  process.env.UPSKILL_SLACK_BOT_TOKEN = 'xoxp' + '-user-token-not-allowed-1234';
+  assert.equal(slackEnabled(), false); // only bot tokens are accepted (no user/app tokens)
+  process.env.UPSKILL_SLACK_BOT_TOKEN = BOT;
+  process.env.UPSKILL_SLACK_CHANNEL = 'not a valid channel!!';
+  assert.equal(slackEnabled(), false);
+  process.env.UPSKILL_SLACK_CHANNEL = 'upskill-enggteam'; // channel names are accepted too
+  assert.equal(slackEnabled(), true);
+});
+
+test('bot mode wins over a webhook when both are configured', async () => {
+  process.env.UPSKILL_SLACK_BOT_TOKEN = BOT;
+  process.env.UPSKILL_SLACK_CHANNEL = 'C0123456789';
+  process.env.SLACK_WEBHOOK_URL = 'https://hooks.slack.com/services/T000/B000/abc';
+  const urls = [];
+  globalThis.fetch = async (url) => { urls.push(url); return new Response('{"ok":true}', { status: 200 }); };
+  await notify('signup', 'x');
+  assert.deepEqual(urls, ['https://slack.com/api/chat.postMessage']);
+});
+
+test('a Slack API error (ok:false, e.g. not_in_channel) or network failure never throws', async () => {
+  process.env.UPSKILL_SLACK_BOT_TOKEN = BOT;
+  process.env.UPSKILL_SLACK_CHANNEL = 'C0123456789';
+  globalThis.fetch = async () => new Response(JSON.stringify({ ok: false, error: 'not_in_channel' }), { status: 200 });
+  assert.equal(await notify('signup', 'x'), true); // handed over; Slack's refusal is only logged
+  globalThis.fetch = async () => { throw new Error('network down'); };
+  assert.equal(await notify('signup', 'x'), false);
+});
+
+test('webhook mode still works', async () => {
+  process.env.SLACK_WEBHOOK_URL = 'https://hooks.slack.com/services/T000/B000/abc';
+  const urls = [];
+  globalThis.fetch = async (url) => { urls.push(url); return new Response('ok', { status: 200 }); };
+  await notify('signup', 'x');
+  assert.deepEqual(urls, ['https://hooks.slack.com/services/T000/B000/abc']);
 });
