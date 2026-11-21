@@ -1,0 +1,10 @@
+node_modules/
+client/dist/
+server/.pgdata/
+.env
+.env.*
+!.env.example
+*.log
+*.png
+!docs/*.png
+.DS_Store

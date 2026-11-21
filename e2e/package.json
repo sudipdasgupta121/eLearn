@@ -1,0 +1,7 @@
+{
+  "name": "upskill-e2e",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node ui.test.mjs" },
+  "dependencies": { "playwright-core": "^1.49.0" }
+}
