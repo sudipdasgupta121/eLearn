@@ -23,8 +23,6 @@ jobs:
           --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/upskill_test
-      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-      SLACK_DISABLED: 'true' # app tests must never post to Slack; only the notify step below does
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -50,17 +48,3 @@ jobs:
       - name: Dependency audit - client (production deps, high+)
         working-directory: client
         run: npm audit --omit=dev --audit-level=high
-      - name: Notify Slack
-        if: always() && env.SLACK_WEBHOOK_URL != ''
-        env:
-          JOB_STATUS: ${{ job.status }}
-          REPO: ${{ github.repository }}
-          BRANCH: ${{ github.ref_name }}
-          SHA: ${{ github.sha }}
-          ACTOR: ${{ github.actor }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          # values arrive via env and are encoded by jq, so branch names / actors cannot inject JSON or shell
-          if [ "$JOB_STATUS" = "success" ]; then ICON=":white_check_mark:"; else ICON=":x:"; fi
-          jq -n --arg t "$ICON CI $JOB_STATUS: $REPO @ $BRANCH (${SHA:0:7}) by $ACTOR - $RUN_URL" '{text:$t}' \
-            | curl -fsS -X POST -H "Content-Type: application/json" --data @- "$SLACK_WEBHOOK_URL"
