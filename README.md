@@ -29,7 +29,7 @@ Set `ENABLE_DEMO_TOOLS=true` to show **Account → Fast-forward to end of billin
 |---|---|
 | `npm run test:unit` | Pure logic: proration, upgrade/downgrade rules, card/email/password validation |
 | `npm run test:integration` | Full API against a **throwaway** Postgres (embedded; or `TEST_DATABASE_URL`, whose name must contain `test`): auth, access control, purchase, progress, subscription lifecycle, concurrency, and security checks (CSRF, rate limits, injection, IDOR, forged JWTs, headers) |
-| `npm test` | Both of the above (55 tests). Never touches `DATABASE_URL` |
+| `npm test` | Both of the above (78 tests). Never touches `DATABASE_URL` |
 | `npm run test:e2e` | **Headed Playwright UI suite** (34 journeys) against a dedicated test DB; generates + opens an HTML report on every run and archives it under `tests/e2e/reports/`. See [tests/e2e/README.md](tests/e2e/README.md) |
 | `npm run test:all` | API tests, then UI tests |
 | `TEST_DATABASE_URL=… npm run perf -- --tps=20 --vus=50 --total-users=600 --p95-ms=500` | **k6 performance/regression gate** against a throwaway DB (you must pass the DB and all four parameters every run). See [tests/perf/README.md](tests/perf/README.md) |
